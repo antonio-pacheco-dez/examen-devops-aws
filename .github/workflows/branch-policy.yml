@@ -1,0 +1,37 @@
+name: Branch promotion policy
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+    branches:
+      - desarrollo
+      - qa
+      - prod
+
+permissions: {}
+
+jobs:
+  validate-source-target:
+    name: validate-source-target
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Enforce approved promotion paths
+        env:
+          SOURCE_BRANCH: ${{ github.head_ref }}
+          TARGET_BRANCH: ${{ github.base_ref }}
+        run: |
+          case "${TARGET_BRANCH}:${SOURCE_BRANCH}" in
+            desarrollo:feature/*|desarrollo:fix/*|qa:desarrollo|prod:qa)
+              echo "Promocion permitida: ${SOURCE_BRANCH} -> ${TARGET_BRANCH}"
+              ;;
+            *)
+              echo "Promocion no permitida: ${SOURCE_BRANCH} -> ${TARGET_BRANCH}"
+              echo "Usa feature/* o fix/* -> desarrollo -> qa -> prod."
+              exit 1
+              ;;
+          esac

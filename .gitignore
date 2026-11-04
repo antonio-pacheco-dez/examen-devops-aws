@@ -1,0 +1,15 @@
+# Terraform state, local plugins and saved plans
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+terraform.tfvars
+*.auto.tfvars
+
+# Local Lambda deployment packages
+terraform/lambda_initial*.zip
+
+# Node.js dependencies and local logs
+node_modules/
+npm-debug.log*

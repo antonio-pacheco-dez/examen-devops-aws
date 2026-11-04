@@ -1,0 +1,13 @@
+{
+  "name": "app-lambda",
+  "version": "1.0.0",
+  "description": "Servicio de pedidos/reportes para AWS Lambda",
+  "type": "module",
+  "main": "index.mjs",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test:local": "node -e \"import('./index.mjs').then(m=>m.handler({rawPath:process.argv[1]??'/health'})).then(r=>console.log(r))\" /health"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

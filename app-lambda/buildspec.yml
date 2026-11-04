@@ -1,0 +1,19 @@
+version: 0.2
+
+env:
+  variables:
+    DEPLOY_REF: "rel-62ee8d"
+
+phases:
+  pre_build:
+    commands:
+      - cd app-lambda
+      - node --check index.mjs
+  build:
+    commands:
+      - echo "Empaquetando index.mjs y package.json..."
+      - zip -r $CODEBUILD_SRC_DIR/function.zip index.mjs package.json
+
+artifacts:
+  files:
+    - function.zip

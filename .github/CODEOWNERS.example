@@ -1,0 +1,5 @@
+# Sustituye YOUR-ORG y los equipos por equipos reales de GitHub.
+# Copia este archivo como .github/CODEOWNERS antes de exigir revisión de Code Owners.
+* @YOUR-ORG/devops-reviewers
+/terraform/ @YOUR-ORG/cloud-platform
+/.github/ @YOUR-ORG/platform-security

@@ -1,0 +1,13 @@
+{
+  "name": "app-ecs",
+  "version": "1.0.0",
+  "description": "Servicio de catálogo (clientes/productos) para ECS",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

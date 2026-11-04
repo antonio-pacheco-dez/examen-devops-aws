@@ -1,0 +1,13 @@
+version: 0.2
+
+env:
+  variables:
+    DEPLOY_REF: "rel-62ee8d"
+
+phases:
+  build:
+    commands:
+      - echo "Desplegando paquete en AWS Lambda..."
+      - aws lambda update-function-code --function-name ${LAMBDA_FUNCTION_NAME} --zip-file "fileb://${CODEBUILD_SRC_DIR_build_output}/function.zip" --publish
+      - aws lambda wait function-updated --function-name ${LAMBDA_FUNCTION_NAME}
+      - echo "Despliegue completado exitosamente."
