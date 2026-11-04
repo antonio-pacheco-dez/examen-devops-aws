@@ -2,7 +2,7 @@
 
 Infraestructura como código y despliegue continuo de dos servicios Node.js en AWS. El proyecto usa Terraform para definir red, Application Load Balancer (ALB), Amazon ECS con Fargate, AWS Lambda, Amazon ECR, CodeBuild y CodePipeline.
 
-> **Estado de la entrega:** este documento describe la configuración del repositorio. Completa los campos marcados como **por confirmar** con datos y capturas del despliegue real en AWS antes de entregar. No se deben presentar como exitosos recursos que todavía no hayan sido desplegados y comprobados.
+> **Estado validado (4 de noviembre de 2026):** ambos pipelines terminaron correctamente; ECS tiene una tarea saludable y sus rutas probadas responden HTTP 200. El pipeline de Lambda terminó, pero sus rutas siguen respondiendo HTTP 502 por el formato de respuesta que espera el ALB. Las reglas de protección de GitHub y HTTPS no están acreditadas en esta entrega.
 
 ## Arquitectura
 
@@ -65,13 +65,13 @@ No guardes claves AWS, tokens ni otras credenciales en el repositorio. Usa perfi
 
 El examen considera el estado remoto una mejora opcional. Para este proyecto elegí un bucket S3 dedicado con versionado, cifrado SSE-S3, bloqueo de acceso público, política que exige HTTPS y bloqueo de estado nativo (`use_lockfile`). Así se evita depender de un archivo local compartido manualmente y se conservan versiones recuperables. Terraform requiere versión 1.10 o posterior para el bloqueo S3.
 
-El root de bootstrap crea el bucket con estado local porque el backend remoto todavía no existe en ese primer paso. La infraestructura principal usa `comercio/terraform.tfstate` y sus workspaces usan `workspaces/<workspace>/comercio/terraform.tfstate`. Para cumplir el examen, se migrará ese estado principal a S3; el estado pequeño del bootstrap se conserva local, protegido y excluido de Git. En una plataforma empresarial, el bucket de backend se provisionaría previamente en una cuenta central de herramientas, y también el estado del bootstrap residiría en almacenamiento remoto. En esta entrega ambos roots y ambientes comparten cuenta AWS y permisos base: es suficiente para el alcance del examen, pero no equivale a aislamiento empresarial. En producción separaría la cuenta de herramientas/estado de las cuentas de desarrollo, QA y producción, y limitaría el acceso IAM por ambiente y por clave S3.
+El root de bootstrap creó el bucket con estado local y la pila principal ya se inicializó y desplegó usando S3 en `comercio/terraform.tfstate`. No había un estado local previo de la pila principal que migrar. El estado del bootstrap permanece local y debe mantenerse fuera de Git. Para este examen, ambos roots comparten la cuenta AWS; en una plataforma empresarial separaría el estado en una cuenta de herramientas y aislaría desarrollo, QA y producción en cuentas distintas, con acceso IAM limitado por ambiente y clave S3.
 
-El cifrado SSE-S3 y el control de acceso IAM son una decisión proporcional para el examen. Si la política corporativa exige control de claves y auditoría dedicada, usaría una CMK de KMS con permisos separados. El estado puede contener datos sensibles: conserva una copia de respaldo protegida durante la migración y nunca la subas al repositorio.
+El cifrado SSE-S3 y el control de acceso IAM son proporcionales para este examen. Si una política corporativa exige control de claves y auditoría dedicada, usaría una CMK de KMS con permisos separados. El estado puede contener datos sensibles: conserva una copia de respaldo protegida antes de cualquier migración y nunca la subas al repositorio.
 
-### Crear el bucket y migrar el estado
+### Bootstrap y configuración del backend
 
-El bucket todavía no existe al inicio, por eso el root de bootstrap usa estado local. Mantén ese archivo fuera de Git, en almacenamiento cifrado y con copia de respaldo controlada:
+En una instalación nueva, el bucket todavía no existe al inicio, por eso el root de bootstrap usa estado local. Mantén ese archivo fuera de Git, en almacenamiento cifrado y con copia de respaldo controlada:
 
 La autenticación de este entorno usa IAM Identity Center. El perfil local `examen-devops` entrega credenciales temporales; no copies access keys, claves secretas ni el ARN temporal al código Terraform. En PowerShell, inicia sesión y confirma que la cuenta corresponde al proyecto antes de crear recursos:
 
@@ -169,7 +169,7 @@ El resultado esperado es una tarea en ejecución y el target ECS en estado `heal
 
 Cuando ECS tenga una tarea saludable, la URL del ambiente activo se muestra en el output `alb_public_url` de Terraform.
 
-> **Seguridad del estado:** el backend remoto está configurado en `terraform/providers.tf`; primero debes aplicar `terraform/state-bootstrap` y migrar el estado como se indica arriba. El estado puede contener valores sensibles: no lo guardes en Git ni compartas los archivos locales de `.terraform/`.
+> **Seguridad del estado:** esta entrega ya usa el backend S3 para la pila principal. No vuelvas a ejecutar el bootstrap ni migres un estado local inexistente. El estado puede contener valores sensibles: no lo guardes en Git ni compartas los archivos locales de `.terraform/`.
 
 ## Contextos y pruebas HTTP
 
@@ -233,7 +233,7 @@ npm run test:local
 
 ## Ambientes y estrategia de liberación
 
-El flujo implementado corresponde a las ramas y Pull Requests pedidos en el examen. Cada ambiente se despliega en una pila Terraform independiente dentro de la misma cuenta AWS; los nombres de recursos llevan sufijo en `desarrollo` y `qa`. El workspace `default` conserva los nombres del despliegue existente y representa `prod`.
+La estrategia definida promueve cambios mediante Pull Requests de `feature/*` o `fix/*` hacia `desarrollo`, después a `qa` y finalmente a `prod`. Terraform puede mantener una pila por ambiente en workspaces separados. La evidencia de esta entrega corresponde a `default` (producción); no se adjuntan resultados de despliegues en `desarrollo` o `qa`.
 
 ```text
 feature/* o fix/* ── PR ──> desarrollo ── PR ──> qa ── PR aprobado ──> prod
@@ -241,7 +241,7 @@ feature/* o fix/* ── PR ──> desarrollo ── PR ──> qa ── PR ap
                               └ auto deploy        └ auto deploy        └ auto deploy
 ```
 
-El workflow `.github/workflows/branch-policy.yml` comprueba el origen y destino del PR al abrirse, actualizarse o cambiar de destino. Usa `pull_request_target` para leer su propia versión confiable del repositorio base; no descarga ni ejecuta código del PR y no recibe permisos de escritura. Es un check complementario: las Rulesets y las revisiones protegen las ramas. Los pipelines de cada workspace escuchan únicamente la rama de su ambiente y solo cuando cambian archivos de la aplicación correspondiente. `prod` exige aprobación de PR, Code Owner y checks antes del merge; después, CodePipeline despliega automáticamente.
+El workflow `.github/workflows/branch-policy.yml` valida el origen y destino del PR. Es un check complementario: por sí solo no protege ramas. Las Rulesets, revisiones y Code Owners deben configurarse y verificarse en GitHub. Los pipelines se filtran por la rama y la ruta de la aplicación configuradas en cada workspace; después de integrar un cambio, CodePipeline despliega automáticamente.
 
 Primero integra estos cambios a `main` y publícalos. Después, antes de inicializar los workspaces, crea y publica las ramas permanentes desde el repositorio Git conectado. Conserva el historial actual de `main` como punto inicial de producción:
 
@@ -254,7 +254,7 @@ git switch -c desarrollo qa
 git push -u origin desarrollo
 ```
 
-Después configura las Rulesets de GitHub y crea ramas de trabajo desde `desarrollo`. Cambia la rama predeterminada del repositorio a `desarrollo`; conserva `main` protegida y sin escrituras durante la transición. El checkout de trabajo de esta evaluación no contiene `.git`, por lo que estos comandos deben ejecutarse en el clon Git del repositorio.
+Después configura las Rulesets de GitHub y crea ramas de trabajo desde `desarrollo`. Cambia la rama predeterminada del repositorio a `desarrollo`; conserva `main` protegida y sin escrituras durante la transición. Ejecuta estos comandos desde el clon Git conectado al repositorio.
 
 ### Inicializar las pilas por ambiente
 
@@ -293,7 +293,7 @@ terraform apply tfplan
 
 Después de crear cada workspace, autoriza su conexión y sigue “Primera imagen ECS en un ambiente nuevo” para ejecutar el pipeline y escalar a una tarea saludable. Cada workspace puede tener valores ACM/DNS propios mediante un archivo `.tfvars` distinto. Antes de desplegar, confirma que el workspace activo sea el previsto con `terraform workspace show`; los workspaces separan estado, no cuentas AWS.
 
-Antes de crear los workspaces de equipo, completa el bootstrap y la migración al backend remoto descritos en “Configuración inicial y despliegue”. El estado de `default`, `desarrollo` y `qa` queda separado por sus claves S3; no compartas estados locales ni los subas al repositorio.
+El backend S3 de la pila principal ya está configurado. Antes de crear workspaces adicionales, confirma que el usuario tenga acceso a sus claves de estado. Cada workspace usa una clave S3 separada; no compartas estados locales ni los subas al repositorio.
 
 ### Reglas empresariales para configurar en GitHub
 
@@ -308,21 +308,22 @@ Publica primero el workflow en la rama predeterminada y confirma que el check ap
 - Limita quién puede modificar las reglas y quién puede aprobar cambios a producción.
 - Usa squash merge para `feature/*`/`fix/*` hacia `desarrollo` y merge commit para promover `desarrollo`→`qa`→`prod`, conservando la trazabilidad entre ambientes.
 
-El administrador del repositorio debe agregar los equipos reales como Code Owners y configurar esas reglas; el checkout actual no tiene un remoto Git disponible para aplicar settings de GitHub automáticamente.
+No se adjuntan evidencias de Rulesets activas, equipos Code Owners ni aprobaciones configuradas en GitHub. Confirma esos controles en **Settings → Rules → Rulesets** y agrega los equipos reales en `.github/CODEOWNERS` antes de presentar esa protección como activa.
 
 ## Evidencias de despliegue para la entrega
 
-Completa esta sección solo después de verificar la cuenta AWS:
+Repositorio: [antonio-pacheco-dez/examen-devops-aws](https://github.com/antonio-pacheco-dez/examen-devops-aws). URL del ALB comprobada: [http://comercio-alb-1775429196.us-west-2.elb.amazonaws.com](http://comercio-alb-1775429196.us-west-2.elb.amazonaws.com).
 
-- **Repositorio Git:** por confirmar — agrega URL y confirma acceso para el evaluador.
-- **URL pública del ALB:** por confirmar — pega el output real de `alb_public_url`.
-- **Ejecuciones exitosas de CodePipeline:** por confirmar — agrega capturas de ambos pipelines con Source, Build y Deploy exitosos.
-- **Servicio ECS:** por confirmar — captura el servicio con al menos una tarea saludable y logs recientes en CloudWatch.
-- **Target groups del ALB:** por confirmar — captura targets ECS y Lambda en estado `healthy`.
-- **Pruebas de rutas:** por confirmar — registra comandos y respuestas de `/health`, clientes, productos, pedidos y reportes.
-- **Conexiones GitHub:** por confirmar — confirma que las conexiones de `default`/prod, `desarrollo` y `qa` están autorizadas.
+### Evidencias capturadas
 
-Guarda las capturas en una carpeta de evidencias del repositorio y enlázalas aquí, cuidando no incluir credenciales, datos sensibles ni identificadores que no quieras compartir.
+- **Pipeline ECS:** Source, Build y Deploy exitosos en [01-codepipeline-ecs.png](evidencias/01-codepipeline-ecs.png).
+- **Pipeline Lambda:** Source, Build y Deploy exitosos en [02-codepipeline-lambda.png](evidencias/02-codepipeline-lambda.png).
+- **Servicio ECS:** clúster activo y 1 de 1 tareas en ejecución en [03-ecs-servicio-saludable.png](evidencias/03-ecs-servicio-saludable.png).
+- **Target groups:** captura del inventario de grupos en [04-target-groups-list.png](evidencias/04-target-groups-list.png). Esta imagen no muestra el estado de salud de ambos targets; el target ECS fue comprobado por CLI como `healthy`, pero falta una captura de la vista de targets. El target Lambda permanece `unhealthy`.
+- **Rutas ECS:** `/health`, `/api/clientes`, `/api/productos` y `/api/info` devolvieron HTTP 200 en [05-rutas-ecs.png](evidencias/05-rutas-ecs.png).
+- **Rutas Lambda:** `/health?service=lambda`, `/api/pedidos` y `/api/reportes` devolvieron HTTP 502 en [06-lambda-diagnostico.png](evidencias/06-lambda-diagnostico.png). No se presentan como rutas saludables; el hallazgo y la corrección propuesta están documentados en Problemas conocidos.
+
+La conexión GitHub usada por los pipelines de `default` está autorizada y ambas ejecuciones se completaron. Las capturas están en `evidencias/` y no incluyen credenciales.
 
 ### Comprobación reproducible en AWS
 
@@ -357,10 +358,17 @@ En ambos pipelines, confirma que las etapas `Source`, `Build` y `Deploy` termina
 
 ## Problemas conocidos y seguimiento
 
+- **Respuesta Lambda para ALB (corrección propuesta, no aplicada):** CloudWatch registra que el handler procesa `/api/pedidos` con estado `200`, pero el target group Lambda informa que la respuesta no tiene el formato esperado y las rutas devuelven `502`. El handler original establece `statusDescription` únicamente como el código (`"200"`); ALB espera el código y la frase HTTP, por ejemplo `"200 OK"`. Si se autorizara modificar la aplicación, la línea de respuesta sería:
+
+  ```js
+  statusDescription: status === 200 ? '200 OK' : '404 Not Found',
+  ```
+
+  Esta corrección se documenta para explicar el diagnóstico; no se modificó `app-lambda/index.mjs` por la restricción del examen. Referencia: [formato de respuesta Lambda para ALB](https://docs.aws.amazon.com/lambda/latest/dg/services-alb.html). Hasta que exista autorización para corregir el código original, no se debe reportar Lambda ni sus rutas como saludables.
 - **Artefacto de despliegue de Lambda:** la acción de despliegue recibe `source_output` y `build_output`, mientras que `buildspec-deploy.yml` usa `function.zip` relativo al directorio de trabajo. Verifica que el buildspec tome el ZIP desde el directorio del artefacto secundario (`CODEBUILD_SRC_DIR_build_output/function.zip`, si el identificador del artefacto es `build_output`) y confirma la ruta en el log de CodeBuild.
 - **HTTPS requiere configuración:** el listener se crea cuando se pasan `alb_certificate_arn` y `alb_domain_name`. Sin un certificado ACM emitido y DNS apuntando al ALB, el output permanece en HTTP y no se debe anunciar HTTPS.
-- **Bootstrap remoto pendiente de ejecutar:** el código crea un bucket de estado dedicado y el root principal ya declara el backend S3; aún se debe aplicar el bootstrap y migrar los estados locales.
-- **Protección GitHub pendiente de activar:** el workflow verifica el origen/destino de los PR, pero las Rulesets, equipos Code Owner y aprobaciones deben configurarse en el repositorio remoto.
+- **Estado remoto:** el bucket de estado y el backend S3 de la pila principal ya están en uso. El bootstrap conserva su estado local, excluido de Git.
+- **Protección GitHub:** no hay evidencia adjunta de Rulesets, Code Owners o aprobaciones activas; verifica esos controles en la configuración del repositorio.
 - **Costos de red privada:** los endpoints de interfaz de ECR y CloudWatch Logs tienen costo por AZ y tráfico. El diseño evita NAT y salida general a Internet para las tareas; revisa costos y métricas antes de desplegar en producción.
 - **Bootstrap ECS:** una pila nueva crea primero el repositorio ECR vacío; espera la primera ejecución exitosa del pipeline para que ECS reciba la primera imagen con tag inmutable.
 - **Cambio de roles CodeBuild:** antes de aplicar la migración desde el rol compartido, confirma que no haya builds activos. Terraform cambia cada proyecto a su rol específico y luego elimina la política/rol compartidos.

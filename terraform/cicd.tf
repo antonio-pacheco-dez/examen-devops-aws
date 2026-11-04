@@ -314,8 +314,11 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
         Resource = "${aws_s3_bucket.artifacts.arn}/*"
       },
       {
-        Effect   = "Allow"
-        Action   = ["codestar-connections:UseConnection"]
+        Effect = "Allow"
+        Action = [
+          "codeconnections:UseConnection",
+          "codestar-connections:UseConnection"
+        ]
         Resource = aws_codestarconnections_connection.github.arn
       },
       {
@@ -340,10 +343,21 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
         Resource = "*"
       },
       {
+        Sid      = "TagPipelineTaskDefinition"
+        Effect   = "Allow"
+        Action   = ["ecs:TagResource"]
+        Resource = "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/${aws_ecs_task_definition.app_ecs.family}:*"
+        Condition = {
+          StringEquals = {
+            "ecs:CreateAction" = "RegisterTaskDefinition"
+          }
+        }
+      },
+      {
         Sid      = "ECSUpdateSpecificServiceOnly"
         Effect   = "Allow"
         Action   = ["ecs:UpdateService"]
-        Resource = aws_ecs_service.app_ecs.id
+        Resource = aws_ecs_service.app_ecs.arn
       },
       {
         Sid      = "PassRoleOnlyToECSTasks"
@@ -352,7 +366,10 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
         Resource = [aws_iam_role.ecs_execution_role.arn, aws_iam_role.ecs_task_role.arn]
         Condition = {
           StringEquals = {
-            "iam:PassedToService" = "ecs-tasks.amazonaws.com"
+            "iam:PassedToService" = [
+              "ecs.amazonaws.com",
+              "ecs-tasks.amazonaws.com"
+            ]
           }
         }
       }
