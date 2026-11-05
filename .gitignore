@@ -13,3 +13,6 @@ terraform/lambda_initial*.zip
 # Node.js dependencies and local logs
 node_modules/
 npm-debug.log*
+
+# Guía local para la demostración; contiene identificadores del entorno
+DEMO-LOCAL.md

@@ -66,7 +66,7 @@ export const handler = async (event = {}, context) => {
     // statusDescription: `${status}`, // requerido por ALB
     statusDescription: `${status} ${({ 200: 'OK', 404: 'Not Found', 500: 'Internal Server Error' })[status] ?? 'Error'}`, // Formato HTTP que espera el ALB: código y descripción, por ejemplo "200 OK".
     isBase64Encoded: false,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'x-build-id': BUILD_ID },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'x-build-id': BUILD_ID, 'mensaje': 'Hola mundo' },
     body: JSON.stringify(body),
   };
 };
